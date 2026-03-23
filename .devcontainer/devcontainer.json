@@ -1,6 +1,7 @@
 {
   "name": "Chronos Billing Environment",
   "image": "mcr.microsoft.com/devcontainers/javascript-node:24-bookworm",
+  "runArgs": ["--name", "chronos-billing-dev"],
   "features": {
     "ghcr.io/devcontainers/features/docker-in-docker:1": {}
   },
