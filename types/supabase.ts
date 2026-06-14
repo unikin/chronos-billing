@@ -489,6 +489,24 @@ export type Database = {
         Update: never
         Relationships: []
       }
+      v_usage_anomalies: {
+        Row: {
+          account_id: string | null
+          endpoint: string | null
+          event_name: string | null
+          id: string | null
+          ingested_at: string | null
+          is_flagged_anomaly: boolean | null
+          over_threshold_by: number | null
+          region: string | null
+          status_code: number | null
+          timestamp: string | null
+          tokens_used: number | null
+        }
+        Insert: never
+        Update: never
+        Relationships: []
+      }
     }
     Functions: {
       generate_monthly_invoice: {

@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { ResponsiveContainer, LineChart, CartesianGrid, XAxis, YAxis, Tooltip, Line, ReferenceLine, BarChart, Bar } from "recharts"
+import { AlertTriangle, Clock3, Gauge, Server } from "lucide-react"
 import type { Database } from "../../types/supabase"
 import { injectTrafficSpike, type TrafficConfig, type TrafficEventProperties } from "../../utils/simulator"
 import { createSupabaseClient } from "../../utils/supabase"
@@ -44,7 +45,10 @@ type UsageEventSnapshot = {
   properties: Pick<TrafficEventProperties, "endpoint" | "tokens_used" | "is_flagged_anomaly">
 }
 
+type UsageAnomaly = Database["public"]["Views"]["v_usage_anomalies"]["Row"]
+
 const TOKEN_UNIT_PRICE = 0.2
+const USAGE_ANOMALY_THRESHOLD = 1000
 const DEFAULT_RATE_CARD_ID = "22222222-2222-4222-8222-222222222222"
 
 type InvoiceGenerationResult = {
@@ -144,6 +148,7 @@ export function SimulatorDashboard({ initialAccounts }: SimulatorDashboardProps)
   const [anomalyAlert, setAnomalyAlert] = useState<string | null>(null)
   const [timeFrame, setTimeFrame] = useState<TimeFrame>("day")
   const [monthlyUsageEvents, setMonthlyUsageEvents] = useState<UsageEventSnapshot[]>([])
+  const [usageAnomalies, setUsageAnomalies] = useState<UsageAnomaly[]>([])
   const [isSimulating, setIsSimulating] = useState(false)
   const [isAnomalySimulating, setIsAnomalySimulating] = useState(false)
   const [invoiceMonth, setInvoiceMonth] = useState(getCurrentMonthInputValue())
@@ -215,6 +220,7 @@ export function SimulatorDashboard({ initialAccounts }: SimulatorDashboardProps)
       if (dashboardLoadRequestRef.current !== requestId) return
       setMonthlyCost(0)
       setMonthlyUsageEvents([])
+      setUsageAnomalies([])
       return
     }
 
@@ -232,7 +238,19 @@ export function SimulatorDashboard({ initialAccounts }: SimulatorDashboardProps)
       console.error("대시보드 데이터 로드 실패:", error)
       setMonthlyCost(0)
       setMonthlyUsageEvents([])
+      setUsageAnomalies([])
       return
+    }
+
+    const { data: anomaliesData, error: anomaliesError } = await supabase
+      .from("v_usage_anomalies")
+      .select("id, account_id, event_name, timestamp, endpoint, region, tokens_used, over_threshold_by, is_flagged_anomaly, status_code, ingested_at")
+      .eq("account_id", accountId)
+      .gte("timestamp", startOfMonth)
+      .order("timestamp", { ascending: false })
+
+    if (anomaliesError) {
+      console.error("이상 사용량 데이터 로드 실패:", anomaliesError)
     }
 
     const usageEvents = (data ?? []).flatMap((row) => {
@@ -251,6 +269,7 @@ export function SimulatorDashboard({ initialAccounts }: SimulatorDashboardProps)
     const totalTokens = usageEvents.reduce((sum, event) => sum + event.properties.tokens_used, 0)
     if (dashboardLoadRequestRef.current !== requestId) return
     setMonthlyUsageEvents(usageEvents)
+    setUsageAnomalies(anomaliesError ? [] : anomaliesData ?? [])
     setMonthlyCost(totalTokens * TOKEN_UNIT_PRICE)
   }, [])
 
@@ -579,6 +598,7 @@ export function SimulatorDashboard({ initialAccounts }: SimulatorDashboardProps)
       billingLoadRequestRef.current += 1
       setMonthlyCost(0)
       setMonthlyUsageEvents([])
+      setUsageAnomalies([])
     }
   }
 
@@ -604,6 +624,22 @@ export function SimulatorDashboard({ initialAccounts }: SimulatorDashboardProps)
 
         setMonthlyCost((prev) => prev + cost)
         setMonthlyUsageEvents((prev) => [...prev, { timestamp: event.timestamp, properties }])
+        if (generatedTokens >= USAGE_ANOMALY_THRESHOLD) {
+          const usageAnomaly: UsageAnomaly = {
+            id: event.id,
+            account_id: event.account_id,
+            event_name: event.event_name,
+            timestamp: event.timestamp,
+            endpoint: properties.endpoint,
+            region: properties.region,
+            tokens_used: generatedTokens,
+            over_threshold_by: generatedTokens - USAGE_ANOMALY_THRESHOLD,
+            is_flagged_anomaly: properties.is_flagged_anomaly,
+            status_code: properties.status_code,
+            ingested_at: event.ingested_at,
+          }
+          setUsageAnomalies((prev) => [usageAnomaly, ...prev])
+        }
         setChartData((prev) => {
           const newData = [...prev, { time: new Date().toLocaleTimeString(), tokens: generatedTokens, cost, endpoint: properties.endpoint }]
           return newData.slice(-15) // 최근 15개 데이터만 유지하여 차트 애니메이션 구현
@@ -638,6 +674,8 @@ export function SimulatorDashboard({ initialAccounts }: SimulatorDashboardProps)
 
   // 삭제된(Archived) 계정을 걸러내는 필터링 변수 (return 문 바로 위에 작성)
   const visibleAccounts = accounts.filter(acc => acc.status !== "Archived")
+  const totalAnomalyTokens = usageAnomalies.reduce((sum, event) => sum + Number(event.tokens_used ?? 0), 0)
+  const latestAnomaly = usageAnomalies[0]
 
   return (
     <div className="container mx-auto max-w-5xl p-10 min-h-screen">
@@ -885,6 +923,89 @@ export function SimulatorDashboard({ initialAccounts }: SimulatorDashboardProps)
                       </BarChart>
                     </ResponsiveContainer>
                   </div>
+                </CardContent>
+              </Card>
+
+              <Card className="md:col-span-3">
+                <CardHeader className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <AlertTriangle className="size-5 text-destructive" />
+                      <CardTitle>이상 사용량 모음</CardTitle>
+                    </div>
+                    <CardDescription>단일 요청 기준 {USAGE_ANOMALY_THRESHOLD.toLocaleString()} 토큰 이상 사용량의 크기와 발생 시점입니다.</CardDescription>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2 text-right">
+                    <div className="rounded-lg border bg-muted/30 px-3 py-2">
+                      <p className="text-[11px] text-muted-foreground">이번 달 건수</p>
+                      <p className="font-mono text-lg font-bold">{usageAnomalies.length.toLocaleString()}</p>
+                    </div>
+                    <div className="rounded-lg border bg-muted/30 px-3 py-2">
+                      <p className="text-[11px] text-muted-foreground">누적 토큰</p>
+                      <p className="font-mono text-lg font-bold">{totalAnomalyTokens.toLocaleString()}</p>
+                    </div>
+                  </div>
+                </CardHeader>
+                <CardContent>
+                  {usageAnomalies.length === 0 ? (
+                    <div className="rounded-lg border border-dashed bg-muted/20 p-6 text-center text-sm text-muted-foreground">
+                      이번 달에는 1,000 토큰 이상 단일 요청이 없습니다.
+                    </div>
+                  ) : (
+                    <div className="space-y-4">
+                      {latestAnomaly && (
+                        <div className="grid gap-3 md:grid-cols-3">
+                          <div className="rounded-lg border bg-destructive/5 p-4">
+                            <div className="mb-2 flex items-center gap-2 text-sm font-semibold text-destructive">
+                              <Gauge className="size-4" />
+                              최근 요청 크기
+                            </div>
+                            <p className="font-mono text-2xl font-extrabold">{Number(latestAnomaly.tokens_used ?? 0).toLocaleString()}</p>
+                            <p className="text-xs text-muted-foreground">기준 초과 +{Number(latestAnomaly.over_threshold_by ?? 0).toLocaleString()} tokens</p>
+                          </div>
+                          <div className="rounded-lg border bg-muted/20 p-4">
+                            <div className="mb-2 flex items-center gap-2 text-sm font-semibold">
+                              <Clock3 className="size-4" />
+                              최근 발생 시점
+                            </div>
+                            <p className="font-mono text-sm">{formatDateTime(latestAnomaly.timestamp)}</p>
+                            <p className="text-xs text-muted-foreground">수집 {formatDateTime(latestAnomaly.ingested_at)}</p>
+                          </div>
+                          <div className="rounded-lg border bg-muted/20 p-4">
+                            <div className="mb-2 flex items-center gap-2 text-sm font-semibold">
+                              <Server className="size-4" />
+                              Endpoint
+                            </div>
+                            <p className="font-mono text-sm">{latestAnomaly.endpoint ?? "unknown"}</p>
+                            <p className="text-xs text-muted-foreground">{latestAnomaly.region ?? "region 없음"} / HTTP {latestAnomaly.status_code ?? "-"}</p>
+                          </div>
+                        </div>
+                      )}
+
+                      <div className="overflow-x-auto rounded-lg border">
+                        <div className="min-w-[680px]">
+                          <div className="grid grid-cols-[1.2fr_0.9fr_0.9fr_0.8fr] gap-3 bg-muted/40 px-4 py-2 text-xs font-semibold text-muted-foreground">
+                            <span>시점</span>
+                            <span>크기</span>
+                            <span>Endpoint</span>
+                            <span>상태</span>
+                          </div>
+                          <div className="divide-y">
+                            {usageAnomalies.slice(0, 8).map((event) => (
+                              <div key={event.id} className="grid grid-cols-[1.2fr_0.9fr_0.9fr_0.8fr] gap-3 px-4 py-3 text-sm">
+                                <span className="font-mono text-xs text-muted-foreground">{formatDateTime(event.timestamp)}</span>
+                                <span className="font-mono font-semibold tabular-nums">{Number(event.tokens_used ?? 0).toLocaleString()} tokens</span>
+                                <span className="truncate font-mono text-xs">{event.endpoint ?? "unknown"}</span>
+                                <span className={event.is_flagged_anomaly ? "text-destructive font-semibold" : "text-muted-foreground"}>
+                                  {event.is_flagged_anomaly ? "flagged" : `HTTP ${event.status_code ?? "-"}`}
+                                </span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  )}
                 </CardContent>
               </Card>
 
