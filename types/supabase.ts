@@ -173,6 +173,8 @@ export type Database = {
       invoices: {
         Row: {
           account_id: string
+          billing_period_end: string | null
+          billing_period_start: string | null
           id: string
           status: string
           subtotal: number
@@ -180,6 +182,8 @@ export type Database = {
         }
         Insert: {
           account_id: string
+          billing_period_end?: string | null
+          billing_period_start?: string | null
           id?: string
           status: string
           subtotal?: number
@@ -187,6 +191,8 @@ export type Database = {
         }
         Update: {
           account_id?: string
+          billing_period_end?: string | null
+          billing_period_start?: string | null
           id?: string
           status?: string
           subtotal?: number
@@ -476,7 +482,13 @@ export type Database = {
       }
     }
     Functions: {
-      [_ in never]: never
+      generate_monthly_invoice: {
+        Args: {
+          p_account_id: string
+          p_target_month: string
+        }
+        Returns: Json
+      }
     }
     Enums: {
       [_ in never]: never
