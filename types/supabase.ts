@@ -461,7 +461,19 @@ export type Database = {
       }
     }
     Views: {
-      [_ in never]: never
+      v_dashboard_events: {
+        Row: {
+          account_id: string | null
+          endpoint: string | null
+          id: string | null
+          is_flagged_anomaly: boolean | null
+          timestamp: string | null
+          tokens_used: number | null
+        }
+        Insert: never
+        Update: never
+        Relationships: []
+      }
     }
     Functions: {
       [_ in never]: never
@@ -600,4 +612,3 @@ export const Constants = {
     Enums: {},
   },
 } as const
-
