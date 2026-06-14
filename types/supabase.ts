@@ -100,24 +100,33 @@ export type Database = {
         Row: {
           account_id: string
           amount: number
+          created_at: string
+          currency: string
           id: string
           reference_id: string | null
+          reference_type: string
           running_balance: number
           transaction_type: string
         }
         Insert: {
           account_id: string
           amount?: number
+          created_at?: string
+          currency?: string
           id?: string
           reference_id?: string | null
+          reference_type: string
           running_balance?: number
           transaction_type: string
         }
         Update: {
           account_id?: string
           amount?: number
+          created_at?: string
+          currency?: string
           id?: string
           reference_id?: string | null
+          reference_type?: string
           running_balance?: number
           transaction_type?: string
         }

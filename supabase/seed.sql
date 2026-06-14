@@ -242,21 +242,33 @@ SET
   timestamp = EXCLUDED.timestamp,
   properties = EXCLUDED.properties;
 
-INSERT INTO public.invoices (id, account_id, subtotal, total_amount, status)
+INSERT INTO public.invoices (
+  id,
+  account_id,
+  subtotal,
+  total_amount,
+  status,
+  billing_period_start,
+  billing_period_end
+)
 VALUES
   (
     '99999999-9999-4999-8999-999999999901',
     '77777777-7777-4777-8777-777777777701',
     702.80,
     702.80,
-    'Paid'
+    'Paid',
+    '2026-06-01T00:00:00+09:00',
+    '2026-07-01T00:00:00+09:00'
   )
 ON CONFLICT (id) DO UPDATE
 SET
   account_id = EXCLUDED.account_id,
   subtotal = EXCLUDED.subtotal,
   total_amount = EXCLUDED.total_amount,
-  status = EXCLUDED.status;
+  status = EXCLUDED.status,
+  billing_period_start = EXCLUDED.billing_period_start,
+  billing_period_end = EXCLUDED.billing_period_end;
 
 INSERT INTO public.invoice_line_items (id, invoice_id, metric_id, quantity, amount)
 VALUES
